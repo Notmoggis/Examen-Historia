@@ -36,8 +36,12 @@
     .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent1),var(--accent2));width:0%}
     .result{font-size:20px;font-weight:700}
     footer{margin-top:auto;text-align:center;opacity:0.7;font-size:13px}
+    .mobile-units{display:none;gap:8px;margin-bottom:12px}
+    .mobile-unit-btn{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;color:var(--bg);cursor:pointer;min-width:120px}
     @media (max-width:1000px){
       .sidebar{display:none} .content{padding:16px}
+      .mobile-units{display:flex;overflow:auto}
+      .mobile-unit-btn{background:var(--glass);border:1px solid rgba(255,255,255,0.03);color:inherit}
     }
     /* extras para que quede más parecido al original largo */
     .unit-meta{font-size:13px;opacity:0.85;margin-top:6px}
@@ -45,13 +49,16 @@
   </style>
 </head>
 <body>
-  <aside class="sidebar card">
+  <aside class="sidebar card" id="sidebar">
     <div class="brand"><div class="logo">HA</div>Guía - Exámenes</div>
     <p class="muted">Selecciona una unidad para comenzar su examen. Preguntas basadas literalmente en la GUÍA-HA.pdf (convertidas a opción múltiple explicativa).</p>
     <div class="units" id="units"></div>
     <div style="margin-top:18px" class="muted small-muted">Buena suerte — lee con calma y revisa al final.</div>
   </aside>
   <main class="content">
+    <!-- mobile selector row (will be filled by JS) -->
+    <div id="mobile-units-row" class="mobile-units"></div>
+
     <div class="card">
       <div class="exam-title">
         <h2 id="unit-title">Selecciona una unidad</h2>
@@ -557,6 +564,7 @@
     let selectedUnit = null; let currentIndex = 0; let answers = [];
 
     const unitsEl = document.getElementById('units');
+    const mobileUnitsRow = document.getElementById('mobile-units-row');
     const unitTitle = document.getElementById('unit-title');
     const examArea = document.getElementById('exam-area');
     const questionText = document.getElementById('question-text');
@@ -568,13 +576,38 @@
     const scoreEl = document.getElementById('score');
     const reviewEl = document.getElementById('review');
 
-    // render unit buttons
-    Object.keys(data).forEach((k, i)=>{
-      const btn = document.createElement('button'); btn.className='unit-btn';
-      btn.innerHTML=`<div><strong>${k}</strong><div class="muted">${data[k].length} preguntas</div></div><div>Iniciar</div>`;
-      btn.onclick = ()=> startUnit(k);
-      unitsEl.appendChild(btn);
-    });
+    // utility: create unit button element (for both sidebar and mobile row)
+    function createUnitButton(unit, forMobile = false){
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'unit-btn';
+      btn.style.display = forMobile ? 'inline-flex' : '';
+      btn.innerHTML = `<div style="text-align:left"><strong>${unit}</strong><div class="muted unit-meta">${data[unit].length} preguntas</div></div><div style="align-self:center">Iniciar</div>`;
+      btn.onclick = ()=> startUnit(unit);
+      // make keyboard accessible
+      btn.addEventListener('keyup', (e)=>{ if(e.key === 'Enter' || e.key === ' ') btn.click(); });
+      return btn;
+    }
+
+    // render unit buttons (both desktop sidebar and mobile row)
+    function renderUnitButtons(){
+      unitsEl.innerHTML = '';
+      mobileUnitsRow.innerHTML = '';
+      Object.keys(data).forEach((k)=>{
+        // sidebar button
+        const btn = createUnitButton(k, false);
+        unitsEl.appendChild(btn);
+        // mobile button (a lighter/tap-friendly button)
+        const mbtn = createUnitButton(k, true);
+        mbtn.className = 'mobile-unit-btn';
+        mbtn.style.minWidth = '140px';
+        mbtn.style.marginRight = '8px';
+        mobileUnitsRow.appendChild(mbtn);
+      });
+    }
+
+    // initial render
+    renderUnitButtons();
 
     function startUnit(unit){
       selectedUnit = unit; currentIndex = 0; answers = Array(data[unit].length).fill(null);
@@ -586,6 +619,7 @@
     }
 
     function renderQuestion(){
+      if(!selectedUnit) return;
       const Q = data[selectedUnit][currentIndex];
       qnum.textContent = `Pregunta ${currentIndex+1} de ${data[selectedUnit].length}`;
       questionText.textContent = Q.q;
@@ -600,6 +634,10 @@
         d.onkeyup = (e)=>{ if(e.key==='Enter') d.click(); };
         choicesEl.appendChild(d);
       });
+      // controls visibility
+      document.getElementById('prev').style.display = currentIndex === 0 ? 'none' : 'inline-block';
+      document.getElementById('next').style.display = currentIndex === data[selectedUnit].length-1 ? 'none' : 'inline-block';
+      document.getElementById('submit').style.display = currentIndex === data[selectedUnit].length-1 ? 'inline-block' : 'none';
     }
 
     document.getElementById('next').onclick = ()=>{
@@ -626,35 +664,54 @@
 
     function grade(){
       const arr = data[selectedUnit]; let correct=0;
-      reviewEl.innerHTML = '';
+      // we are only showing final score per your request
       arr.forEach((item, i)=>{
-        const isCorrect = answers[i]===item.a; if(isCorrect) correct++;
-        const div = document.createElement('div'); div.style.marginTop='12px'; div.style.padding='10px'; div.style.borderRadius='10px';
-        div.style.background = isCorrect ? 'linear-gradient(90deg, rgba(6,182,212,0.06), rgba(139,92,246,0.04))' : 'linear-gradient(90deg, rgba(246,92,92,0.04), rgba(255,255,255,0.01))';
-        const your = item.choices[answers[i]] ?? '—';
-        div.innerHTML = `<strong>Q${i+1}:</strong> ${item.q} <br><strong>Tu respuesta:</strong> <em>${your}</em> <br><strong>Correcta:</strong> <em>${item.choices[item.a]}</em>`;
-        reviewEl.appendChild(div);
+        if(answers[i]===item.a) correct++;
       });
       scoreEl.textContent = `Resultado: ${correct} / ${arr.length} (${Math.round(correct/arr.length*100)}%)`;
       examArea.style.display='none'; resultArea.style.display='block';
       window.scrollTo({top:0,behavior:'smooth'});
     }
 
-    document.getElementById('restart').onclick = ()=>{ startUnit(selectedUnit); }
+    document.getElementById('restart').onclick = ()=>{ 
+      // restart returns to selection state but keep page responsive
+      selectedUnit = null; currentIndex = 0; answers = [];
+      unitTitle.textContent = 'Selecciona una unidad';
+      qcount.textContent = '';
+      prog.style.width = '0%';
+      examArea.style.display = 'none';
+      resultArea.style.display = 'none';
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
 
-    // small-screen helper: add unit selector at top if sidebar hidden
-    (function addMobileSelector(){
+    // small-screen helper: if sidebar hidden still keep mobile row visible (already rendered)
+    (function ensureMobileVisibility(){
+      // in some devices the initial width may change after load; re-render mobile buttons on resize
+      window.addEventListener('resize', ()=> {
+        // nothing heavy here; just ensure mobile row exists
+        if(!mobileUnitsRow.hasChildNodes()){
+          renderUnitButtons();
+        }
+      });
+    })();
+
+    // Accessibility: allow keyboard navigation between unit buttons
+    (function keyboardAccessibility(){
+      const container = document; // global
+      container.addEventListener('keydown', (e)=>{
+        if(e.key === 'Escape'){
+          // go back to unit selection
+          document.getElementById('restart').click();
+        }
+      });
+    })();
+
+    // initial focus hint for mobile users: if no units visible in sidebar, ensure mobile row scroll to start
+    (function initialMobileAdjust(){
       if(window.innerWidth <= 1000){
-        const sel = document.createElement('select'); sel.style.width='100%'; sel.style.marginBottom='12px';
-        const defaultOpt = document.createElement('option'); defaultOpt.text='-- Selecciona unidad --'; defaultOpt.value='';
-        sel.appendChild(defaultOpt);
-        Object.keys(data).forEach(k=>{
-          const o = document.createElement('option'); o.value=k; o.text=k; sel.appendChild(o);
-        });
-        sel.onchange = ()=>{ if(sel.value) startUnit(sel.value); };
-        document.querySelector('.content').insertBefore(sel, document.querySelector('.card'));
+        if(mobileUnitsRow.firstChild) mobileUnitsRow.firstChild.scrollIntoView({behavior:'auto', inline:'start'});
       }
     })();
   </script>
 </body>
-  </html>
+</html>
